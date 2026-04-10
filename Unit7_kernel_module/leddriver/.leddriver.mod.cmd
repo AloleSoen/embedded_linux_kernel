@@ -1,0 +1,1 @@
+cmd_/home/leson/leson_linux/Unit7_kernel_module/leddriver/leddriver.mod := { echo  /home/leson/leson_linux/Unit7_kernel_module/leddriver/leddriver.o;  echo; } > /home/leson/leson_linux/Unit7_kernel_module/leddriver/leddriver.mod

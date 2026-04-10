@@ -1,0 +1,1 @@
+cmd_/home/leson/leson_linux/Unit7_kernel_module/hello/hello.mod := { echo  /home/leson/leson_linux/Unit7_kernel_module/hello/hello.o;  echo; } > /home/leson/leson_linux/Unit7_kernel_module/hello/hello.mod

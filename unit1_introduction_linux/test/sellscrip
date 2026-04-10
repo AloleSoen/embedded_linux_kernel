@@ -1,0 +1,2 @@
+rm -rf test_debug
+gcc -g -o test_debug test.c
