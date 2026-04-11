@@ -16,7 +16,7 @@
 #define DATA_OUT			(1 << 31)
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Tran Le Son");
+MODULE_AUTHOR("AloleSon");
 MODULE_DESCRIPTION("A simple Hello world LKM!");
 MODULE_VERSION("0.1");
 
