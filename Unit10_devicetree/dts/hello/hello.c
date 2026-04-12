@@ -1,80 +1,91 @@
-#include <linux/module.h>     /* Needed by all modules */
-#include <linux/kernel.h>     /* Needed for KERN_INFO */
-#include <linux/init.h>       /* Needed for the macros */
-#include <linux/delay.h>
-#include <linux/io.h>
+#include <linux/module.h> /* Needed by all modules */
+#include <linux/kernel.h> /* Needed for KERN_INFO */
 #include <linux/time.h>
+#include <linux/io.h>
+#include <linux/delay.h>
+#include <linux/of.h>
+#include <linux/fs.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
+#include <linux/kdev_t.h>
+#include <linux/uaccess.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <linux/of.h>
+#include <linux/mod_devicetable.h>
 #include <linux/of_device.h>
-
-#define GPIO_SETDATAOUT_OFFSET          0x194
-#define GPIO_CLEARDATAOUT_OFFSET        0x190
-#define GPIO_OE_OFFSET                  0x134
-#define LED                             ~(1 << 31)
-#define DATA_OUT			(1 << 31)
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("AloleSon");
-MODULE_DESCRIPTION("A simple Hello world LKM!");
-MODULE_VERSION("0.1");
+#include <linux/platform_device.h>
+#include <linux/device.h>
+#include <linux/miscdevice.h>
 
 void __iomem *base_addr;
-struct timer_list my_timer;
-unsigned int count = 0;
 
-static void timer_function(struct timer_list * data){
-	if ((count % 2) == 0) {
-		printk(KERN_INFO "turn on led\n");
-		writel_relaxed(DATA_OUT,  base_addr + GPIO_SETDATAOUT_OFFSET);
-	}
-	else {
-		printk(KERN_INFO "turn off led\n");
-		writel_relaxed(DATA_OUT, base_addr + GPIO_CLEARDATAOUT_OFFSET);
-	}
+int blink_led_driver_probe(struct platform_device *pdev)
+{
+    struct device_node	*of_node = NULL;
+    uint32_t led_config[2];
+    uint32_t reg_array[4];
+    uint32_t led_regs[5];
+    struct resource *res = NULL;
+    // uint64_t start = 0;
+    // uint64_t length = 0;
+    uint32_t reg_data = 0;
+    unsigned int n = 0;
 
-	count++;
-	mod_timer(&my_timer, jiffies + HZ);
+    pr_info("%s, %d\n", __func__, __LINE__);
+
+    of_node=pdev->dev.of_node;
+
+    of_property_read_u32_array(of_node, "reg", reg_array, 2);
+    pr_info("reg: %08x %08x\n", reg_array[0], reg_array[1]);
+
+    //Day la cach don gian hon
+    res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+    pr_info("read by platform_get_resource: %016x %016x\n", res->start, res->end - res->start);
+
+    of_property_read_u32_array(of_node, "led_config", led_config, 2);
+    of_property_read_u32_array(of_node, "led_regs", led_regs, 5);
+
+    base_addr = ioremap(res->start, res->end - res->start);
+
+    //enable output mode for GPIO0_31
+    reg_data = readl_relaxed(base_addr + led_regs[3]);
+    reg_data &= (~(led_regs[0]));
+    writel_relaxed(reg_data, base_addr + led_regs[3]);
+
+    n = led_config[0];
+    while (n > 0) {
+        writel_relaxed(led_regs[0], base_addr + led_regs[1]);
+        msleep(led_config[1] * HZ);
+        writel_relaxed(led_regs[0], base_addr + led_regs[2]);
+        msleep(led_config[1] * HZ);
+        n--;
+    }
+
+    return 0;
+}
+
+int blink_led_driver_remove(struct platform_device *pdev)
+{
+    pr_info("Good bye device tree\n");
+    return 0;
 }
 
 static const struct of_device_id blink_led_of_match[] = {
-	{ .compatible = "led-example1", NULL},
-	{},
+    {.compatible = "led-example0"},
+    {.compatible = "led-example1"},
+    {},
 };
 
-int blink_led_probe(struct platform_device *pdev)
-{
-	uint32_t reg_data = 0;
-	struct resource *res = NULL;
-
-	printk(KERN_INFO "Hello world 1.\n");
-
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	base_addr = ioremap(res->start, res->end - res->start);
-	reg_data = readl_relaxed(base_addr + GPIO_OE_OFFSET);
-	reg_data &= LED;
-	writel_relaxed(reg_data, base_addr + GPIO_OE_OFFSET);
-	
-	
-	timer_setup(&my_timer, timer_function, 0);
-	mod_timer(&my_timer, jiffies + HZ);
-
-	return 0;
-}
-
-int blink_led_remove(struct platform_device *pdev)
-{
-	return 0;
-}
-
 static struct platform_driver blink_led_driver = {
-	.probe		= blink_led_probe,
-	.remove		= blink_led_remove,
-	.driver		= {
-		.name	= "blink_led",
-		.of_match_table = blink_led_of_match,
-	},
+    .probe = blink_led_driver_probe,
+    .remove = blink_led_driver_remove,
+    .driver = {
+        .name = "blink_led",
+        .of_match_table = blink_led_of_match,
+    },
 };
 
 module_platform_driver(blink_led_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Blink Led kernel module");
