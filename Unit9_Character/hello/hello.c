@@ -1,170 +1,91 @@
-#include <linux/fs.h>
-#include <linux/init.h>
-#include <linux/miscdevice.h>
-#include <linux/module.h>
-#include <linux/uaccess.h>
-#include <linux/io.h>
-#include <linux/gpio.h>
+#include <linux/module.h> /* Needed by all modules */
+#include <linux/kernel.h> /* Needed for KERN_INFO */
 #include <linux/time.h>
+#include <linux/io.h>
 #include <linux/delay.h>
-#include <linux/timer.h>
-
-#define GPIO_ADDR_BASE 0x44E07000
-#define ADDR_SIZE (0x1000)
-#define GPIO_SETDATAOUT_OFFSET 0x194
-#define GPIO_CLEARDATAOUT_OFFSET 0x190
-#define GPIO_OE_OFFSET 0x134
-#define GPIO_DATAOUT 0x13C
-#define LED ~(1 << 31)
-#define DATA_OUT (1 << 31)
+#include <linux/of.h>
+#include <linux/fs.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
+#include <linux/kdev_t.h>
+#include <linux/uaccess.h>
+#include <linux/platform_device.h>
+#include <linux/slab.h>
+#include <linux/mod_devicetable.h>
+#include <linux/of_device.h>
+#include <linux/platform_device.h>
+#include <linux/device.h>
+#include <linux/miscdevice.h>
 
 void __iomem *base_addr;
 
-//config den, de san sang hoat dong
-//set p9:13 lam GPIO output
-int misc_open(struct inode *node, struct file *filep)
+int blink_led_driver_probe(struct platform_device *pdev)
 {
+    struct device_node	*of_node = NULL;
+    uint32_t led_config[2];
+    uint32_t reg_array[4];
+    uint32_t led_regs[5];
+    struct resource *res = NULL;
+    // uint64_t start = 0;
+    // uint64_t length = 0;
     uint32_t reg_data = 0;
+    unsigned int n = 0;
 
     pr_info("%s, %d\n", __func__, __LINE__);
-    reg_data = readl_relaxed(base_addr + GPIO_OE_OFFSET);
-    reg_data &= LED;
-    writel_relaxed(reg_data, base_addr + GPIO_OE_OFFSET);
 
-    return 0;
-}
+    of_node=pdev->dev.of_node;
 
-int misc_release(struct inode *node, struct file *filep)
-{
-    pr_info("%s, %d\n", __func__, __LINE__);
-    return 0;
-}
+    of_property_read_u32_array(of_node, "reg", reg_array, 2);
+    pr_info("reg: %08x %08x\n", reg_array[0], reg_array[1]);
 
-/*
- * den dang tat, app doc tra ve ky tu "0"
- * nguoc lai, tra ve ky tu "1"
-*/
-static ssize_t misc_read(struct file *filp, char __user *buf, size_t count,
-                         loff_t *f_pos)
-{
-    uint32_t reg_data = 0;
-    char status = 0;
-    int ret = 0;
+    //Day la cach don gian hon
+    res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+    pr_info("read by platform_get_resource: %016x %016x\n", res->start, res->end - res->start);
 
-    reg_data = readl_relaxed(base_addr + GPIO_DATAOUT);
-    reg_data &= DATA_OUT;
+    of_property_read_u32_array(of_node, "led_config", led_config, 2);
+    of_property_read_u32_array(of_node, "led_regs", led_regs, 5);
 
-    if (reg_data == 0) {
-        status = '0';
-    } else {
-        status = '1';
+    base_addr = ioremap(res->start, res->end - res->start);
+
+    //enable output mode for GPIO0_31
+    reg_data = readl_relaxed(base_addr + led_regs[3]);
+    reg_data &= (~(led_regs[0]));
+    writel_relaxed(reg_data, base_addr + led_regs[3]);
+
+    n = led_config[0];
+    while (n > 0) {
+        writel_relaxed(led_regs[0], base_addr + led_regs[1]);
+        msleep(led_config[1] * HZ);
+        writel_relaxed(led_regs[0], base_addr + led_regs[2]);
+        msleep(led_config[1] * HZ);
+        n--;
     }
 
-    ret = copy_to_user(buf, &status, 1);
-    pr_info("%s, %d, buf: %c\n", __func__, __LINE__, status);
-
-    return 1;
-}
-
-/*
- * app ghi "0" xuong device file -> tat den led
- * app ghi "1" xuong device file -> bat den led
-*/
-static ssize_t misc_write(struct file *filp, const char __user *buf,
-                          size_t count, loff_t *f_pos)
-{
-    char local_data[128];
-    int ret = 0;
-
-    memset(local_data, 0, sizeof(local_data));
-    ret = copy_from_user(local_data, buf, 1);
-    pr_info("%s, %d, buf: %s\n", __func__, __LINE__, local_data);
-
-    switch (local_data[0])
-    {
-    case '1': //bat led
-        writel_relaxed(DATA_OUT, base_addr + GPIO_SETDATAOUT_OFFSET);
-        break;
-    
-    case '0': //tat led
-        writel_relaxed(DATA_OUT, base_addr + GPIO_CLEARDATAOUT_OFFSET);
-        break;
-    default:
-        pr_info("send invalid command\n");
-        break;
-    }
-    return count;
-}
-
-struct config
-{
-    int times;
-};
-
-struct config g_data;
-
-#define MAGIC_NO	100
-#define SEND_DATA_CMD	_IOW(MAGIC_NO, sizeof(struct config), struct config *) //=> unsigned int
-#define GET_DATA_CMD	_IOR(MAGIC_NO, sizeof(struct config), struct config *)
-
-static long misc_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
-{
-    int ret = 0;
-
-    switch (cmd)
-    {
-    case SEND_DATA_CMD:
-        ret = copy_from_user(&g_data, (struct config *)arg, sizeof(struct config));
-        break;
-
-    case GET_DATA_CMD:
-        ret = copy_to_user((struct config *)arg, &g_data, sizeof(struct config));
-        break;
-    
-    default:
-        pr_info("invalid command\n");
-        return -1;
-    }
-
-    pr_info("%s, %d, times: %d\n", __func__, __LINE__, g_data.times);
-
     return 0;
 }
 
-struct file_operations misc_fops = {
-    .owner = THIS_MODULE,
-    .open = misc_open, //Enable hardware
-    .release = misc_release, //disable hardware, synchronize data xuong hardware
-    .read = misc_read, //Doc du lieu tu hardware, luu vao buffer cua kernel
-    .write = misc_write, //Ghi du lieu tu buffer cua kernel xuong hardware
-    .unlocked_ioctl = misc_ioctl, //Chua cau hinh ve thoi gian sang cua den
-};
-
-static struct miscdevice misc_example = {
-    .minor = MISC_DYNAMIC_MINOR,
-    .name = "misc_example",
-    .fops = &misc_fops,
-};
-
-static int misc_init(void)
+int blink_led_driver_remove(struct platform_device *pdev)
 {
-    pr_info("misc module init\n");
-    base_addr = ioremap(GPIO_ADDR_BASE, ADDR_SIZE);
-    misc_register(&misc_example);
-
+    pr_info("Good bye device tree\n");
     return 0;
 }
 
-static void misc_exit(void)
-{
-    pr_info("misc module exit\n");
-    misc_deregister(&misc_example);
-    iounmap(base_addr);
-}
+static const struct of_device_id blink_led_of_match[] = {
+    {.compatible = "led-example0"},
+    {.compatible = "led-example1"},
+    {},
+};
 
-module_init(misc_init);
-module_exit(misc_exit);
+static struct platform_driver blink_led_driver = {
+    .probe = blink_led_driver_probe,
+    .remove = blink_led_driver_remove,
+    .driver = {
+        .name = "blink_led",
+        .of_match_table = blink_led_of_match,
+    },
+};
 
-MODULE_AUTHOR("Tan Le Son");
-MODULE_DESCRIPTION("Example misc driver.");
+module_platform_driver(blink_led_driver);
+
 MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Blink Led kernel module");

@@ -6,6 +6,6 @@ KER_DIR= /home/leson/work/bbb/kernelbuildscripts/KERNEL
 
 all:
 	make ARCH=arm CROSS_COMPILE=$(CROSS) -C $(KER_DIR) M=$(PWD) modules
-Anh bảo trà
+
 clean:
 	make -C $(KER_DIR) M=$(PWD) clean 
