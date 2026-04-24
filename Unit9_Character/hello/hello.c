@@ -86,6 +86,5 @@ static struct platform_driver blink_led_driver = {
 };
 
 module_platform_driver(blink_led_driver);
-
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Blink Led kernel module");

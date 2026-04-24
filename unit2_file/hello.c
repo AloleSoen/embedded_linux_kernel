@@ -18,4 +18,4 @@ int main()
 	while (1);
 	close(fd);
 	return 0;
-}
+}	
